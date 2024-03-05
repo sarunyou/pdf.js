@@ -143,8 +143,8 @@ class InkEditor extends AnnotationEditor {
       [
         AnnotationEditorParamsType.INK_COLOR,
         this.color ||
-          InkEditor._defaultColor ||
-          AnnotationEditor._defaultLineColor,
+        InkEditor._defaultColor ||
+        AnnotationEditor._defaultLineColor,
       ],
       [
         AnnotationEditorParamsType.INK_OPACITY,
@@ -404,37 +404,46 @@ class InkEditor extends AnnotationEditor {
     if (this.currentPath.length > 1 && x === lastX && y === lastY) {
       return;
     }
-    const currentPath = this.currentPath;
+
+    let currentPath = this.currentPath;
     let path2D = this.#currentPath2D;
-    currentPath.push([x, y]);
+    this.#currentPath2D = path2D = new Path2D();
     this.#hasSomethingToDraw = true;
 
-    if (currentPath.length <= 2) {
-      path2D.moveTo(...currentPath[0]);
-      path2D.lineTo(x, y);
-      return;
-    }
+    currentPath.splice(1);
+    currentPath.push([x, y]);
 
-    if (currentPath.length === 3) {
-      this.#currentPath2D = path2D = new Path2D();
-      path2D.moveTo(...currentPath[0]);
-    }
+    const [x0, y0] = currentPath.at(0);
 
-    this.#makeBezierCurve(
-      path2D,
-      ...currentPath.at(-3),
-      ...currentPath.at(-2),
-      x,
-      y
-    );
+    const lineAngle = Math.atan2(y0 - y, x0 - x);
+    let delta = Math.PI / 6;
+    const endSize = 20;
+    path2D.moveTo(...currentPath.at(0));
+    path2D.lineTo(x, y);
+    for (let i = 0; i < 2; i++) {
+      path2D.moveTo(x, y);
+      const arrowX = x + endSize * Math.cos(lineAngle + delta);
+      const arrowY = y + endSize * Math.sin(lineAngle + delta);
+      path2D.lineTo(arrowX, arrowY);
+      for (let j = 0; j < endSize; j++) {
+        // draw line to make bezier curve more smooth on arrow
+        const arrowX = x + j * Math.cos(lineAngle + delta);
+        const arrowY = y + j * Math.sin(lineAngle + delta);
+        currentPath.push([arrowX, arrowY]);
+      }
+      currentPath.push([arrowX, arrowY]);
+      currentPath.push([x, y]);
+      delta *= -1;
+    }
+    return;
   }
 
   #endPath() {
     if (this.currentPath.length === 0) {
       return;
     }
-    const lastPoint = this.currentPath.at(-1);
-    this.#currentPath2D.lineTo(...lastPoint);
+    // const lastPoint = this.currentPath.at(-1);
+    // this.#currentPath2D.lineTo(...lastPoint);
   }
 
   /**
@@ -524,6 +533,8 @@ class InkEditor extends AnnotationEditor {
       ctx.stroke(path);
     }
     ctx.stroke(this.#currentPath2D);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
 
     ctx.restore();
   }
