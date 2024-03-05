@@ -404,14 +404,34 @@ class InkEditor extends AnnotationEditor {
     if (this.currentPath.length > 1 && x === lastX && y === lastY) {
       return;
     }
+
     const currentPath = this.currentPath;
     let path2D = this.#currentPath2D;
-    currentPath.push([x, y]);
+    this.#currentPath2D = path2D = new Path2D();
     this.#hasSomethingToDraw = true;
 
+    if (currentPath.length === 1) {
+      currentPath.push([x, y]);
+    } else if (currentPath.length === 2) {
+      currentPath.pop();
+      currentPath.push([x, y]);
+    }
+
+    const [x0, y0] = currentPath[0];
+
+    const lineAngle = Math.atan2(y0 - y, x0 - x);
+    let delta = Math.PI / 6;
+    const endSize = 10;
     if (currentPath.length <= 2) {
       path2D.moveTo(...currentPath[0]);
       path2D.lineTo(x, y);
+      for (let i = 0; i < 2; i++) {
+        path2D.moveTo(x, y);
+        const arrowX = x + endSize * Math.cos(lineAngle + delta);
+        const arrowY = y + endSize * Math.sin(lineAngle + delta);
+        path2D.lineTo(arrowX, arrowY);
+        delta *= -1;
+      }
       return;
     }
 
@@ -1183,7 +1203,7 @@ class InkEditor extends AnnotationEditor {
     const color = AnnotationEditor._colorManager.convert(this.ctx.strokeStyle);
 
     return {
-      annotationType: AnnotationEditorType.INK,
+      annotationType: AnnotationEditorType.LINE,
       color,
       thickness: this.thickness,
       opacity: this.opacity,

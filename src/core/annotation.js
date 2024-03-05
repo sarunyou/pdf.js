@@ -25,6 +25,7 @@ import {
   BASELINE_FACTOR,
   FeatureTest,
   getModificationDate,
+  getUuid,
   IDENTITY_MATRIX,
   info,
   LINE_DESCENT_FACTOR,
@@ -198,7 +199,7 @@ class AnnotationFactory {
         }
         warn(
           `Unimplemented widget field type "${fieldType}", ` +
-            "falling back to base field type."
+          "falling back to base field type."
         );
         return new WidgetAnnotation(parameters);
 
@@ -254,7 +255,7 @@ class AnnotationFactory {
           } else {
             warn(
               `Unimplemented annotation type "${subtype}", ` +
-                "falling back to base annotation."
+              "falling back to base annotation."
             );
           }
         }
@@ -370,6 +371,7 @@ class AnnotationFactory {
             );
           }
           break;
+        case AnnotationEditorType.LINE:
         case AnnotationEditorType.INK:
           promises.push(
             InkAnnotation.createNewAnnotation(xref, annotation, dependencies)
@@ -1106,7 +1108,7 @@ class Annotation {
       }
 
       const objectLoader = new ObjectLoader(resources, keys, resources.xref);
-      return objectLoader.load().then(function () {
+      return objectLoader.load().then(function() {
         return resources;
       });
     });
@@ -2063,7 +2065,7 @@ class WidgetAnnotation extends Annotation {
     return mk.size > 0 ? mk : null;
   }
 
-  amendSavedDict(annotationStorage, dict) {}
+  amendSavedDict(annotationStorage, dict) { }
 
   async save(evaluator, task, annotationStorage) {
     const storageEntry = annotationStorage?.get(this.data.id);
@@ -3590,8 +3592,7 @@ class ChoiceWidgetAnnotation extends WidgetAnnotation {
       for (const index of valueIndices) {
         if (firstIndex <= index && index < end) {
           buf.push(
-            `1 ${
-              totalHeight - (index - firstIndex + 1) * lineHeight
+            `1 ${totalHeight - (index - firstIndex + 1) * lineHeight
             } ${totalWidth} ${lineHeight} re f`
           );
         }
@@ -4363,14 +4364,20 @@ class InkAnnotation extends MarkupAnnotation {
   static createNewDict(annotation, xref, { apRef, ap }) {
     const { color, opacity, paths, outlines, rect, rotation, thickness } =
       annotation;
+    console.log("paths", paths);
+    console.log("rect", rect);
+    const L = [...paths[0].points.slice(0, 2), ...paths[0].points.slice(-2)];
+    console.log("L", L);
     const ink = new Dict(xref);
     ink.set("Type", Name.get("Annot"));
-    ink.set("Subtype", Name.get("Ink"));
+    ink.set("Subtype", Name.get("Line"));
     ink.set("CreationDate", `D:${getModificationDate()}`);
-    ink.set("Rect", rect);
-    ink.set("InkList", outlines?.points || paths.map(p => p.points));
     ink.set("F", 4);
-    ink.set("Rotate", rotation);
+    ink.set("L", L);
+    ink.set("IT", Name.get("LineArrow"));
+    ink.set("LE", [Name.get("None"), Name.get("OpenArrow")]);
+    ink.set("Rect", rect);
+    ink.set("NM", getUuid());
 
     if (outlines) {
       // Free highlight.
@@ -4382,7 +4389,7 @@ class InkAnnotation extends MarkupAnnotation {
 
     // Line thickness.
     const bs = new Dict(xref);
-    ink.set("BS", bs);
+    // ink.set("BS", bs);
     bs.set("W", thickness);
 
     // Color.
@@ -4392,7 +4399,7 @@ class InkAnnotation extends MarkupAnnotation {
     );
 
     // Opacity.
-    ink.set("CA", opacity);
+    // ink.set("CA", opacity);
 
     const n = new Dict(xref);
     ink.set("AP", n);
@@ -4407,6 +4414,7 @@ class InkAnnotation extends MarkupAnnotation {
   }
 
   static async createNewAppearanceStream(annotation, xref, params) {
+    console.log("annotation", annotation);
     if (annotation.outlines) {
       return this.createNewAppearanceStreamForHighlight(
         annotation,
@@ -4416,18 +4424,22 @@ class InkAnnotation extends MarkupAnnotation {
     }
     const { color, rect, paths, thickness, opacity } = annotation;
 
+    console.log("rect", rect);
     const appearanceBuffer = [
-      `${thickness} w 1 J 1 j`,
-      `${getPdfColor(color, /* isFill */ false)}`,
+      `q Q q 0 0 ${rect.at(2) - rect.at(0)} ${rect.at(3) - rect.at(1)} re W n /Cs1 cs 0 0 0 sc 7.467778 3.16336 m 2 2`,
+      `l 4.349979 7.072238 l h f 2 J /Cs1 CS 0 0 0 SC q 1 0 0 1 -${rect.at(0).toFixed(2)} -${rect.at(1).toFixed(2)} cm`,
     ];
 
     if (opacity !== 1) {
       appearanceBuffer.push("/R0 gs");
     }
 
+    console.log("paths", paths);
     const buffer = [];
+
     for (const { bezier } of paths) {
       buffer.length = 0;
+
       buffer.push(
         `${numberToString(bezier[0])} ${numberToString(bezier[1])} m`
       );
@@ -4436,14 +4448,14 @@ class InkAnnotation extends MarkupAnnotation {
           `${numberToString(bezier[0])} ${numberToString(bezier[1])} l S`
         );
       } else {
-        for (let i = 2, ii = bezier.length; i < ii; i += 6) {
+        for (let i = 2, ii = bezier.length; i < ii; i += 2) {
           const curve = bezier
-            .slice(i, i + 6)
+            .slice(i, i + 2)
             .map(numberToString)
             .join(" ");
-          buffer.push(`${curve} c`);
+          buffer.push(`${curve} l`);
         }
-        buffer.push("S");
+        buffer.push("S Q Q");
       }
       appearanceBuffer.push(buffer.join("\n"));
     }
@@ -4453,7 +4465,12 @@ class InkAnnotation extends MarkupAnnotation {
     appearanceStreamDict.set("FormType", 1);
     appearanceStreamDict.set("Subtype", Name.get("Form"));
     appearanceStreamDict.set("Type", Name.get("XObject"));
-    appearanceStreamDict.set("BBox", rect);
+    appearanceStreamDict.set("BBox", [
+      0,
+      0,
+      rect.at(2) - rect.at(0),
+      rect.at(3) - rect.at(1),
+    ]);
     appearanceStreamDict.set("Length", appearance.length);
 
     if (opacity !== 1) {
@@ -4773,9 +4790,9 @@ class StrikeOutAnnotation extends MarkupAnnotation {
           pointsCallback: (buffer, points) => {
             buffer.push(
               `${(points[0].x + points[2].x) / 2} ` +
-                `${(points[0].y + points[2].y) / 2} m`,
+              `${(points[0].y + points[2].y) / 2} m`,
               `${(points[1].x + points[3].x) / 2} ` +
-                `${(points[1].y + points[3].y) / 2} l`,
+              `${(points[1].y + points[3].y) / 2} l`,
               "S"
             );
             return [points[0].x, points[1].x, points[3].y, points[1].y];
